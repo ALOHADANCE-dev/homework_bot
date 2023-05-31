@@ -40,7 +40,7 @@ HOMEWORK_VERDICTS = {
 
 
 def check_tokens():
-    """Проверяем переменные окружения"""
+    """Проверяем переменные окружения."""
     if all(TELEGRAM_TOKEN, PRACTICUM_TOKEN, CHAT_ID) is False:
         logging.critical('Не все перемемнные окружения доступны')
         return False
@@ -49,7 +49,7 @@ def check_tokens():
 
 
 def send_message(bot, message):
-    """Отправляем сообщение с помощью бота"""
+    """Отправляем сообщение с помощью бота."""
     try:
         bot.send_message(CHAT_ID, message)
         logging.debug('Сообщение отправлено')
@@ -60,7 +60,7 @@ def send_message(bot, message):
 
 
 def get_api_answer(timestamp):
-    """Запрос к API Практикум.Домашка"""
+    """Запрос к API Практикум.Домашка."""
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=timestamp)
         if response.status_code == HTTPStatus.OK:
@@ -75,7 +75,7 @@ def get_api_answer(timestamp):
 
 
 def check_response(response):
-    """Проверяем ответ API Практикум.Домашка"""
+    """Проверяем ответ API Практикум.Домашка."""
     if not isinstance(response, dict):
         logging.error('Ответ Api не словарь')
         raise ValueError('Ответ Api не словарь')
@@ -92,7 +92,7 @@ def check_response(response):
 
 
 def parse_status(homework):
-    """Соотношение статуса ответа и HOMEWORK_VERDICT"""
+    """Соотношение статуса ответа и HOMEWORK_VERDICT."""
     try:
         status = homework['status']
         verdict = HOMEWORK_VERDICTS[status]
