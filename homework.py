@@ -4,7 +4,6 @@ import telegram
 import time
 import logging
 import sys
-import asyncio
 
 from logging.handlers import RotatingFileHandler
 from http import HTTPStatus
@@ -69,8 +68,8 @@ def get_api_answer(timestamp):
             return response.json()
         else:
             logging.warning('Что-то не так с ответом от Практикум.Домашка')
-            raise Exception(f'Ошибка при запросе к API: {response.status_code}')
-    except Exceptions.HTTPError as error:
+            raise Exception(f'Ошибка при запросе к API:{response.status_code}')
+    except Exception.HTTPError as error:
         print(f"Ошибка: {error}, status code: {response.status_code}")
     response = response.json()
     return response
@@ -100,7 +99,7 @@ def parse_status(homework):
         homework_name = homework['homework_name']
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
     except KeyError:
-        error_message = 'Ошибка, в ответе API отсутствует ключ "homework_name".'
+        error_message = 'Ошибка, в ответе API отсутствует ключ "homework_name"'
         raise ValueError(error_message)
     except Exception as error:
         error_message = f'Ошибка, статус домашней работы неизвестен {error}'
