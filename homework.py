@@ -11,10 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO)
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = RotatingFileHandler('bot.log', maxBytes=50000000, backupCount=5)
@@ -29,7 +25,6 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-PAYLOAD = {'from_date': 1549962000}
 
 
 HOMEWORK_VERDICTS = {
@@ -38,10 +33,24 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+ITERABLE = [TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN]
+
+
+class ApiRequestError(Exception):
+    pass
+
+
+class HomeworkKeyError(Exception):
+    pass
+
+
+class JsonConvertError(Exception):
+    pass
+
 
 def check_tokens():
     """Проверяем переменные окружения."""
-    if TELEGRAM_TOKEN and PRACTICUM_TOKEN and TELEGRAM_CHAT_ID is not None:
+    if all([TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN]):
         return True
     else:
         logging.critical('Не все перемемнные окружения доступны')
@@ -61,67 +70,90 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Запрос к API Практикум.Домашка."""
-    PAYLOAD = {'from_date': timestamp}
+    payload = {'from_date': timestamp}
     try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params=PAYLOAD)
-        if response.status_code == HTTPStatus.OK:
-            return response.json()
-        else:
-            logging.warning('Что-то не так с ответом от Практикум.Домашка')
-            raise Exception(f'Ошибка при запросе к API:{response.status_code}')
+        response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
     except Exception.HTTPError as error:
-        print(f"Ошибка: {error}, status code: {response.status_code}")
-    response = response.json()
-    return response
+        logging.warning(f"Ошибка: {error}, status code:{response.status_code}")
+        raise ApiRequestError(
+            f'Ошибка при запросе к API:{response.status_code}'
+        )
+    if response.status_code == HTTPStatus.OK:
+        return response.json()
+    else:
+        logging.warning('Что-то не так с ответом от Практикум.Домашка')
+        raise ApiRequestError(
+            f'Ошибка при запросе к API:{response.status_code}'
+        )
+    try:
+        response_json = response.json()
+        logging.debug(f'Получен ответ от API: {response_json}')
+        return response_json
+    except ValueError as error:
+        logger.warning(f"Ошибка при преобразовании ответа в JSON: {error}")
+        raise JsonConvertError('Ошибка при преобразовании ответа в JSON')
 
 
 def check_response(response):
+    # Не совсем понял про комментарий с логированием, то есть,
+    # я просто убираю отсюда логирование, оставляю только рейзы,
+    # а затем пишу что то вроде try-except с выводом удаленных логов?
     """Проверяем ответ API Практикум.Домашка."""
     if not isinstance(response, dict):
         logging.error('Ответ Api не словарь')
         raise TypeError('Ответ Api не словарь')
-    homeworks = response.get('homeworks')
-    if homeworks is None:
+    homework = response.get('homeworks')
+    if homework is None:
         logging.error('В ответе нет ключа homeworks')
-        raise Exception('В ответе нет ключа homeworks')
-    if not isinstance(homeworks, list):
+        raise HomeworkKeyError('В ответе нет ключа homeworks')
+    if not isinstance(homework, list):
         logging.error('Домашние работы не в виде списка')
         raise TypeError('Домашние работы не в виде списка')
-    else:
-        return homeworks
+    return homework
 
 
 def parse_status(homework):
     """Соотношение статуса ответа и HOMEWORK_VERDICT."""
-    try:
-        status = homework['status']
-        verdict = HOMEWORK_VERDICTS[status]
-        homework_name = homework['homework_name']
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
-    except KeyError:
+    status = homework.get('status')
+    if status is None:
+        error_message = 'Ошибка, в статусе API отсутствует ключ "status"'
+        raise ValueError(error_message)
+    verdict = HOMEWORK_VERDICTS.get(status)
+    if verdict is None:
+        error_message = 'Ошибка, статус домашней работы неизвестен'
+        raise ValueError(error_message)
+    homework_name = homework.get('homework_name')
+    if homework_name is None:
         error_message = 'Ошибка, в ответе API отсутствует ключ "homework_name"'
         raise ValueError(error_message)
-    except Exception as error:
-        error_message = f'Ошибка, статус домашней работы неизвестен {error}'
-        return (error_message)
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    first_message = ''
+    second_message = ''
     while True:
         try:
             timestamp = int(time.time())
-            response = get_api_answer(timestamp)
+            response = get_api_answer(timestamp - RETRY_PERIOD)
             homework = check_response(response)[0]
             message = parse_status(homework)
-            send_message(bot, message)
+            if first_message != message:
+                send_message(bot, message)
+                first_message = message
         except Exception as error:
             error_message = f'Сбой в работе программы: {error}'
-            send_message(bot, error_message)
+            if second_message != error_message:
+                send_message(bot, error_message)
+                second_message = error_message
         time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO)
     main()
