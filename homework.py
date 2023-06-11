@@ -8,6 +8,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from http import HTTPStatus
 from dotenv import load_dotenv
+from my_exception import ApiRequestError, HomeworkKeyError, JsonConvertError
 
 load_dotenv()
 
@@ -36,31 +37,12 @@ HOMEWORK_VERDICTS = {
 ITERABLE = [TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN]
 
 
-class ApiRequestError(Exception):
-    """Ошибки при запросе к апи."""
-
-    pass
-
-
-class HomeworkKeyError(Exception):
-    """Ошибки при отсутствии ключей в домашке."""
-
-    pass
-
-
-class JsonConvertError(Exception):
-    """Ошибки при преобразовании в JSON."""
-
-    pass
-
-
 def check_tokens():
     """Проверяем переменные окружения."""
     if all([TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN]):
         return True
-    else:
-        logging.critical('Не все перемемнные окружения доступны')
-        sys.exit()
+    logging.critical('Не все перемемнные окружения доступны')
+    sys.exit()
 
 
 def send_message(bot, message):
@@ -71,7 +53,6 @@ def send_message(bot, message):
     except Exception as error:
         message = f'Сообщение не отправлено, возникла ошибка: {error}'
         logging.error(message)
-        return message
 
 
 def get_api_answer(timestamp):
@@ -79,41 +60,29 @@ def get_api_answer(timestamp):
     payload = {'from_date': timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-    except Exception.HTTPError as error:
-        logging.warning(f"Ошибка: {error}, status code:{response.status_code}")
+    except Exception.HTTPError:
         raise ApiRequestError(
             f'Ошибка при запросе к API:{response.status_code}'
         )
     if response.status_code == HTTPStatus.OK:
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            raise JsonConvertError('Ошибка при преобразовании ответа в JSON')
     else:
-        logging.warning('Что-то не так с ответом от Практикум.Домашка')
         raise ApiRequestError(
             f'Ошибка при запросе к API:{response.status_code}'
         )
-    try:
-        response_json = response.json()
-        logging.debug(f'Получен ответ от API: {response_json}')
-        return response_json
-    except ValueError as error:
-        logger.warning(f"Ошибка при преобразовании ответа в JSON: {error}")
-        raise JsonConvertError('Ошибка при преобразовании ответа в JSON')
 
 
 def check_response(response):
-    # Не совсем понял про комментарий с логированием, то есть,
-    # я просто убираю отсюда логирование, оставляю только рейзы,
-    # а затем пишу что то вроде try-except с выводом удаленных логов?
     """Проверяем ответ API Практикум.Домашка."""
     if not isinstance(response, dict):
-        logging.error('Ответ Api не словарь')
         raise TypeError('Ответ Api не словарь')
     homework = response.get('homeworks')
     if homework is None:
-        logging.error('В ответе нет ключа homeworks')
         raise HomeworkKeyError('В ответе нет ключа homeworks')
     if not isinstance(homework, list):
-        logging.error('Домашние работы не в виде списка')
         raise TypeError('Домашние работы не в виде списка')
     return homework
 
@@ -139,19 +108,22 @@ def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    first_message = ''
     second_message = ''
     while True:
         try:
-            timestamp = int(time.time())
-            response = get_api_answer(timestamp - RETRY_PERIOD)
+            timestamp = int(time.time() - RETRY_PERIOD)
+            # такая запись подойдет? Но чем она отличается от той,
+            # где я вычитал это в response?
+            response = get_api_answer(timestamp)
             homework = check_response(response)[0]
-            message = parse_status(homework)
-            if first_message != message:
+            if not homework:
+                time.sleep(RETRY_PERIOD)
+            else:
+                message = parse_status(homework)
                 send_message(bot, message)
-                first_message = message
         except Exception as error:
             error_message = f'Сбой в работе программы: {error}'
+            logging.error(str(error_message))
             if second_message != error_message:
                 send_message(bot, error_message)
                 second_message = error_message
