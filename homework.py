@@ -12,7 +12,7 @@ from my_exception import ApiRequestError, HomeworkKeyError, JsonConvertError
 
 import telegram
 
-load_dotenv()   
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
