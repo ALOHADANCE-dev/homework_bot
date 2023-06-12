@@ -1,16 +1,18 @@
 import os
-import requests
-import telegram
+import sys
 import time
 import logging
-import sys
-
 from logging.handlers import RotatingFileHandler
 from http import HTTPStatus
+
+import requests
 from dotenv import load_dotenv
+
 from my_exception import ApiRequestError, HomeworkKeyError, JsonConvertError
 
-load_dotenv()
+import telegram
+
+load_dotenv()   
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -33,8 +35,6 @@ HOMEWORK_VERDICTS = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
-
-ITERABLE = [TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN]
 
 
 def check_tokens():
@@ -69,10 +69,9 @@ def get_api_answer(timestamp):
             return response.json()
         except ValueError:
             raise JsonConvertError('Ошибка при преобразовании ответа в JSON')
-    else:
-        raise ApiRequestError(
-            f'Ошибка при запросе к API:{response.status_code}'
-        )
+    raise ApiRequestError(
+        f'Ошибка при запросе к API:{response.status_code}'
+    )
 
 
 def check_response(response):
@@ -108,25 +107,26 @@ def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    second_message = ''
+    save_error_message = ''
+    timestamp = 0
     while True:
         try:
-            timestamp = int(time.time() - RETRY_PERIOD)
-            # такая запись подойдет? Но чем она отличается от той,
-            # где я вычитал это в response?
             response = get_api_answer(timestamp)
             homework = check_response(response)[0]
             if not homework:
-                time.sleep(RETRY_PERIOD)
+                pass
             else:
                 message = parse_status(homework)
                 send_message(bot, message)
+                print(response)
+                timestamp = int(response['current_date'])
+                save_error_message = ''
         except Exception as error:
             error_message = f'Сбой в работе программы: {error}'
             logging.error(str(error_message))
-            if second_message != error_message:
+            if save_error_message != error_message:
                 send_message(bot, error_message)
-                second_message = error_message
+                save_error_message = error_message
         time.sleep(RETRY_PERIOD)
 
 
