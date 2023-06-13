@@ -118,9 +118,8 @@ def main():
             else:
                 message = parse_status(homework)
                 send_message(bot, message)
-                print(response)
-                timestamp = int(response['current_date'])
-                save_error_message = ''
+            timestamp = response.get('current_date', timestamp)
+            save_error_message = ''
         except Exception as error:
             error_message = f'Сбой в работе программы: {error}'
             logging.error(str(error_message))
